@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entrenamiento Inteligente</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #f8fafc; }
+        .progress-ring__circle { transition: stroke-dashoffset 0.35s; transform: rotate(-90deg); transform-origin: 50% 50%; }
+        .editable-input { background: transparent; border-bottom: 2px solid #e2e8f0; width: 45px; text-align: center; font-weight: bold; outline: none; transition: border-color 0.2s; }
+        .editable-input:focus { border-bottom-color: #3b82f6; }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        #screenshot-alert { display: none; }
+    </style>
+</head>
+<body class="p-4 pb-24">
+    <div class="max-w-md mx-auto space-y-4">
+        
+        <!-- Dashboard Superior -->
+        <div class="bg-indigo-900 rounded-[2rem] p-6 text-white shadow-2xl relative overflow-hidden">
+            <div class="flex justify-between items-start mb-4 relative z-10">
+                <div>
+                    <h1 class="text-xs uppercase tracking-[0.2em] font-bold text-indigo-300">Progreso Total</h1>
+                    <!-- Elemento para la Fecha (Sin cursiva) -->
+                    <p id="current-date" class="text-[10px] text-indigo-400 font-semibold mb-1 uppercase tracking-wider"></p>
+                    <div class="flex items-baseline gap-2">
+                        <span id="total-series-global" class="text-5xl font-800">0</span>
+                        <span class="text-indigo-300 font-semibold uppercase text-xs tracking-wider">Series</span>
+                    </div>
+                </div>
+                <!-- Selector de Tiempo Global -->
+                <div class="text-right">
+                    <label class="block text-[10px] uppercase font-bold text-indigo-400 mb-1">Duración Sesión</label>
+                    <select id="session-duration" onchange="changeGlobalTime(this.value)" class="bg-indigo-800 text-white text-sm font-bold rounded-lg px-2 py-1 outline-none border border-indigo-700">
+                        <option value="10">10 min</option>
+                        <option value="15">15 min</option>
+                        <option value="20">20 min</option>
+                        <option value="25">25 min</option>
+                        <option value="30" selected>30 min</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Timer Card Global -->
+            <div class="bg-indigo-800/50 backdrop-blur-md rounded-2xl p-4 flex items-center justify-between border border-indigo-700/50 relative z-10">
+                <div class="relative w-14 h-14">
+                    <svg class="w-14 h-14">
+                        <circle class="text-indigo-900" stroke-width="4" stroke="currentColor" fill="transparent" r="25" cx="28" cy="28" />
+                        <circle id="timer-progress" class="text-cyan-400 progress-ring__circle" stroke-width="4" stroke-dasharray="157" stroke-dashoffset="0" stroke-linecap="round" stroke="currentColor" fill="transparent" r="25" cx="28" cy="28" />
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold" id="display-time">30:00</div>
+                </div>
+                <div class="flex gap-2">
+                    <button id="btn-start" class="bg-cyan-500 hover:bg-cyan-400 text-indigo-900 px-5 py-2 rounded-xl text-sm font-800 transition-all shadow-lg shadow-cyan-500/20 uppercase tracking-tighter">Iniciar</button>
+                    <button id="btn-reset" class="bg-indigo-700 hover:bg-indigo-600 text-white px-3 py-2 rounded-xl text-sm font-bold transition-all uppercase tracking-tighter">Reset</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alerta de Captura de Pantalla -->
+        <div id="screenshot-alert" class="bg-amber-100 border-2 border-amber-300 rounded-2xl p-4 text-center animate-bounce">
+            <p class="text-amber-800 font-bold text-sm">📸 ¡SESIÓN COMPLETADA!</p>
+            <p class="text-amber-700 text-xs">Toma una captura de pantalla ahora para guardarlo en tu galería con la fecha de hoy.</p>
+        </div>
+
+        <!-- Lista de Ejercicios -->
+        <div id="exercise-container" class="space-y-3">
+            <!-- Inyectado por JavaScript -->
+        </div>
+
+        <div class="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-center">
+            <p class="text-blue-600 text-xs font-semibold">🔊 Sonidos y Confeti activos.</p>
+        </div>
+    </div>
+
+    <script>
+        // Audio Context para generar sonidos
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            if (type === 'plus') {
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime); 
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            } else if (type === 'minus') {
+                osc.frequency.setValueAtTime(440, audioCtx.currentTime); 
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            } else if (type === 'finish') {
+                [660, 880, 1000].forEach((freq, i) => {
+                    const o = audioCtx.createOscillator();
+                    const g = audioCtx.createGain();
+                    o.connect(g); g.connect(audioCtx.destination);
+                    o.frequency.setValueAtTime(freq, audioCtx.currentTime + (i * 0.1));
+                    g.gain.setValueAtTime(0.1, audioCtx.currentTime + (i * 0.1));
+                    g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + (i * 0.1) + 0.3);
+                    o.start(audioCtx.currentTime + (i * 0.1));
+                    o.stop(audioCtx.currentTime + (i * 0.1) + 0.3);
+                });
+            }
+        }
+
+        function launchConfetti() {
+            confetti({
+                particleCount: 150,
+                spread: 70,
+                origin: { y: 0.6 },
+                colors: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#6366f1']
+            });
+        }
+
+        // Función para establecer la fecha actual
+        function setDate() {
+            const dateElement = document.getElementById('current-date');
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            const today = new Date();
+            dateElement.innerText = today.toLocaleDateString('es-ES', options);
+        }
+
+        const exercises = [
+            { id: 1, name: 'Sentadillas', goal: 15, unit: 'reps', icon: '🦵', color: 'blue', series: 0, timerActive: false },
+            { id: 2, name: 'Flexiones', goal: 12, unit: 'reps', icon: '💪', color: 'emerald', series: 0, timerActive: false },
+            { id: 3, name: 'Zancadas', goal: 10, unit: 'reps', icon: '🏃', color: 'violet', series: 0, timerActive: false },
+            { id: 4, name: 'Plancha', goal: 30, unit: 'seg', icon: '⏱️', color: 'orange', series: 0, timerActive: false, currentCountdown: 30 },
+            { id: 5, name: 'Escaladores', goal: 30, unit: 'seg', icon: '🔥', color: 'rose', series: 0, timerActive: false, currentCountdown: 30 }
+        ];
+
+        let timeLeft = 30 * 60;
+        let totalTime = 30 * 60;
+        let timerId = null;
+        let activeExerciseTimer = null;
+
+        const container = document.getElementById('exercise-container');
+        const globalSeriesDisplay = document.getElementById('total-series-global');
+        const displayTime = document.getElementById('display-time');
+        const progressCircle = document.getElementById('timer-progress');
+        const screenshotAlert = document.getElementById('screenshot-alert');
+        const circumference = 2 * Math.PI * 25;
+
+        function renderExercises() {
+            container.innerHTML = '';
+            exercises.forEach((ex, index) => {
+                const isTimed = ex.unit === 'seg';
+                const div = document.createElement('div');
+                div.className = `bg-white p-4 rounded-3xl shadow-sm border border-slate-100 flex items-center justify-between transition-all ${ex.timerActive ? 'ring-2 ring-orange-400 bg-orange-50' : ''}`;
+                
+                div.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-2xl bg-${ex.color}-50 text-${ex.color}-600 flex items-center justify-center text-lg">${ex.icon}</div>
+                        <div>
+                            <h4 class="font-bold text-slate-800 text-sm">${ex.name}</h4>
+                            <div class="text-[10px] text-slate-400 font-medium">
+                                Meta: <input type="number" value="${ex.goal}" 
+                                    onchange="updateGoal(${index}, this.value)" 
+                                    class="editable-input text-slate-700 w-8"> ${ex.unit}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center gap-2">
+                        ${isTimed ? `
+                            <button onclick="toggleExerciseTimer(${index})" class="w-10 h-10 rounded-xl ${ex.timerActive ? 'bg-orange-500 text-white animate-pulse' : 'bg-slate-100 text-slate-600'} flex items-center justify-center shadow-sm transition-all mr-1">
+                                ${ex.timerActive ? `<span class="text-xs font-bold">${ex.currentCountdown}</span>` : '▶️'}
+                            </button>
+                        ` : ''}
+                        
+                        <div class="flex items-center gap-1 bg-slate-50 p-1 rounded-xl">
+                            <button onclick="updateSerie(${index}, -1)" class="w-7 h-7 rounded-lg bg-white text-slate-400 hover:text-red-500 shadow-sm flex items-center justify-center font-bold transition-transform active:scale-90">-</button>
+                            <span class="w-6 text-center text-sm font-800 text-slate-800">${ex.series}</span>
+                            <button onclick="updateSerie(${index}, 1)" class="w-7 h-7 rounded-lg bg-indigo-600 text-white shadow-md flex items-center justify-center font-bold transition-transform active:scale-95">+</button>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+            updateGlobalCount();
+        }
+
+        function toggleExerciseTimer(index) {
+            const ex = exercises[index];
+            if (ex.timerActive) {
+                clearInterval(activeExerciseTimer);
+                ex.timerActive = false;
+                ex.currentCountdown = ex.goal;
+            } else {
+                exercises.forEach(e => { e.timerActive = false; e.currentCountdown = e.goal; });
+                clearInterval(activeExerciseTimer);
+
+                ex.timerActive = true;
+                ex.currentCountdown = ex.goal;
+                
+                activeExerciseTimer = setInterval(() => {
+                    ex.currentCountdown--;
+                    if (ex.currentCountdown <= 0) {
+                        clearInterval(activeExerciseTimer);
+                        ex.timerActive = false;
+                        ex.currentCountdown = ex.goal;
+                        ex.series++; 
+                        playSound('finish');
+                        launchConfetti(); 
+                        renderExercises();
+                    } else {
+                        renderExercises();
+                    }
+                }, 1000);
+            }
+            renderExercises();
+        }
+
+        function changeGlobalTime(mins) {
+            const minutes = parseInt(mins);
+            totalTime = minutes * 60;
+            timeLeft = totalTime;
+            screenshotAlert.style.display = 'none';
+            
+            if (timerId) {
+                clearInterval(timerId);
+                timerId = null;
+                const startBtn = document.getElementById('btn-start');
+                startBtn.innerText = 'INICIAR';
+                startBtn.className = "bg-cyan-500 text-indigo-900 px-5 py-2 rounded-xl text-sm font-800 shadow-lg transition-all";
+            }
+
+            if (activeExerciseTimer) {
+                clearInterval(activeExerciseTimer);
+                activeExerciseTimer = null;
+            }
+
+            exercises.forEach(ex => {
+                ex.series = 0;
+                ex.timerActive = false;
+                if (ex.unit === 'seg') ex.currentCountdown = ex.goal;
+            });
+
+            updateTimerDisplay();
+            renderExercises();
+        }
+
+        function updateSerie(index, val) {
+            if (val > 0) playSound('plus');
+            else if (val < 0 && exercises[index].series > 0) playSound('minus');
+            
+            exercises[index].series = Math.max(0, exercises[index].series + val);
+            renderExercises();
+        }
+
+        function updateGoal(index, value) {
+            const val = parseInt(value) || 0;
+            exercises[index].goal = val;
+            if (exercises[index].unit === 'seg') {
+                exercises[index].currentCountdown = val;
+            }
+            renderExercises();
+        }
+
+        function updateGlobalCount() {
+            const total = exercises.reduce((acc, curr) => acc + curr.series, 0);
+            globalSeriesDisplay.innerText = total;
+        }
+
+        function updateTimerDisplay() {
+            const m = Math.floor(timeLeft / 60);
+            const s = timeLeft % 60;
+            displayTime.innerText = `${m}:${s < 10 ? '0' : ''}${s}`;
+            const offset = circumference - (timeLeft / totalTime) * circumference;
+            progressCircle.style.strokeDashoffset = offset;
+        }
+
+        document.getElementById('btn-start').addEventListener('click', function() {
+            if (timerId) {
+                clearInterval(timerId);
+                timerId = null;
+                this.innerText = 'CONTINUAR';
+                this.className = "bg-cyan-500 text-indigo-900 px-5 py-2 rounded-xl text-sm font-800 shadow-lg";
+            } else {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                screenshotAlert.style.display = 'none';
+                timerId = setInterval(() => {
+                    if (timeLeft <= 0) {
+                        clearInterval(timerId);
+                        timerId = null;
+                        playSound('finish');
+                        launchConfetti();
+                        screenshotAlert.style.display = 'block';
+                        document.getElementById('btn-start').innerText = 'INICIAR';
+                        return;
+                    }
+                    timeLeft--;
+                    updateTimerDisplay();
+                }, 1000);
+                this.innerText = 'PAUSAR';
+                this.className = "bg-rose-500 text-white px-5 py-2 rounded-xl text-sm font-800 shadow-lg";
+            }
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', () => {
+            changeGlobalTime(document.getElementById('session-duration').value);
+        });
+
+        // Inicialización
+        setDate();
+        renderExercises();
+        updateTimerDisplay();
+    </script>
+</body>
+</html>
